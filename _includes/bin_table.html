@@ -1,0 +1,240 @@
+<style>
+.selected {
+	color: #ff0000 !important;
+	border-color: #ff0000 !important;
+}
+</style>
+
+<tr><td id="search-message" colspan="2">Couldn't find the tool you're looking for? <a href="https://securitytoolkit.github.io/contribute/">Contribute</a> your own!</td></tr>
+
+
+<div id="bin-search-wrapper">
+
+    <ul id="bin-search-filters" class="filter-list">
+	<h3>Category:</h3>
+	{%- for item_pair in site.data.items -%}
+		{%- assign item_id = item_pair[0] -%}
+		{%- assign item = item_pair[1] -%}
+		<li><input type="checkbox" id="{{ item.label }}" name="item_name" onclick='handleChange(this, "{{ item.label }}");'><label id="{{ item.label }}_label" for="{{ item.label }}" data-title="{{ item.description | replace: '\n', ' ' }}">{{ item.label }}</label></li>
+	{%- endfor -%}
+    </ul>
+
+</div>
+<div style="margin-top: -20px;"><input id="bin-search" type="text" placeholder="Search among {{ site.wadcoms | size }} tools: <toolname> +<filter> ..."/></div>
+<div id="bin-table-wrapper"><table id="bin-table">
+	<thead><tr><th>Tool</th></tr></thead>
+    <tbody>
+{%- assign sites = site.wadcoms | reverse -%} 
+{%- for file in sites -%}	
+	{%- if file.references -%} 
+	<tr><td><div class="bin-name"><div style="flex: 0 0 97%"><a target="_blank" href="{{ file.references }}" id="{{ file.url }}" style="text-decoration: none; color: DarkGreen;">{{ file.command | escape }}</a></div><div style="flex: 1;"><a href="javascript:void(0)" onClick="copyFunction('{{ file.url }}')"><img src="https://securitytoolkit.github.io/assets/copy-button.svg" alt="Copy" title="Copy" id="{{ file.url }}_img"/></a></div></div><p style="margin-top: -12px;">{%- include filter_list.html bin=file -%}</p></td></tr>
+	{%- else -%}
+	<tr><td><div class="bin-name"><div style="flex: 0 0 97%"><a id="{{ file.url }}" style="text-decoration: none; color: DarkGreen;">{{ file.command | escape }}</a></div><div style="flex: 1;"><a href="javascript:void(0)" onClick="copyFunction('{{ file.url }}')"><img src="https://securitytoolkit.github.io/assets/copy-button.svg" alt="Copy" title="Copy" id="{{ file.url }}_img"/></a></div></div><p style="margin-top: -12px;">{%- include filter_list.html bin=file -%}</p></td></tr>
+	{%- endif -%}
+{%- endfor -%}
+	</tbody>
+    </table>
+</div>
+
+<script>
+
+ function copyFunction(file_url) {
+	 var copyCommand = document.getElementById(file_url);
+
+	 navigator.clipboard.writeText(copyCommand.innerText).then(() => {
+{%- for file in site.wadcoms -%}
+document.getElementById("{{ file.url }}_img").alt = "Copy";
+document.getElementById("{{ file.url }}_img").title = "Copy";
+{%- endfor -%}
+document.getElementById(file_url + "_img").alt = "Copied";
+document.getElementById(file_url + "_img").title = "Copied";
+	 }, () => {
+		 console.log("copy failed");
+	 });
+
+ }
+
+ function handleChange(checkbox, label) {
+	 if (checkbox.checked == true) {
+		 document.getElementById(label).className = 'match';
+		 document.getElementById(label + "_label").innerText = label + "✓";
+		 var slash = window.location.href.lastIndexOf("/");
+		 if (window.location.href[slash+1] == "#") {
+		     window.location.href+='+' + label
+		 } else {
+		     window.location.href+='#+' + label
+		 }
+	 } else {
+		 document.getElementById(label).className = "";
+		 document.getElementById(label + "_label").innerText = label;
+		 label = label.replace(" ", "%20");
+		 var new_href = window.location.href.replace("+"+label, "");
+		 window.location.href = new_href;
+		 if (window.location.hash == "") {
+			 document.getElementById("bin-search").value = "";
+		 }
+	 }
+ }
+
+ function filter(query) {
+     var queryArray = query.toLowerCase().trim().split(/ *\+/);
+     var binPattern = queryArray[0];
+     var functionPatterns = queryArray.splice(1);
+
+     // filter rows
+     var noResults = true;
+
+     var allItems = document.getElementsByName("item_name");
+     //var allFilters = document.getElementsByName("service_name");
+     //var allAttacks = document.getElementsByName("attack_name");
+     //var allOS = document.getElementsByName("OS_name");
+
+     var allItems_parsed = [];
+     //var allFilters_parsed = [];
+     //var allAttacks_parsed = []; 
+     //var allOS_parsed = []; 
+
+
+	 allItems.forEach((i) => {
+	     allItems_parsed.push(i.id.toLowerCase());
+     });
+     var item_chosen = functionPatterns.filter(element => allItems_parsed.includes(element));
+
+
+     document.querySelectorAll('#bin-table tbody tr').forEach(function (row) {
+         var show = true;
+
+         var binName = row.children[0].firstElementChild.innerText.toLowerCase();
+	     
+         var functionElems = Array.from(row.children[0].childNodes[2].children);
+	 
+         if (show) {
+             functionElems.forEach((item) => {
+                 item.className = '';
+             });
+	     functionElems.forEach((item) => {
+	         let siblings = [];
+		 if (item.parentNode) {
+		     let sibling = item.parentNode.firstChild;
+		     while (sibling) {
+		         if (sibling.nodeType == 1 && sibling !== item) {
+			     siblings.push(sibling);
+			 }
+			     sibling = sibling.nextSibling;
+		     }
+		     for (i = 0; i < siblings.length; i++ ) {
+		         var found = false;
+			 functionPatterns.forEach((pattern) => {
+			     if (!pattern) {
+			         return;
+			     }
+					 
+			     if (siblings[i].innerText.toLowerCase().startsWith(pattern.toLowerCase())) {
+			         found = true;
+			     }
+			 });
+			 if (found) {
+	                     siblings[i].className = 'match';
+			 }
+		     }
+		     functionPatterns.forEach((p) => {
+			     if (!p) {
+				     return;
+			     }
+
+			     if (item.innerText.toLowerCase().startsWith(p.toLowerCase())) {
+				     item.className = 'match';
+			     }
+		     });
+
+		 }
+	     });
+
+         }
+	 var filled = true;
+	 var found_binName = false;
+         if (binName.indexOf(binPattern) !== -1 && binPattern.length !== 0) {
+		 found_binName = true;
+	 }
+
+	 functionElems.forEach((i) => {
+{%- for item_pair in site.data.items -%}
+{%- assign item_id = item_pair[0] -%}
+{%- assign item = item_pair[1] -%}
+
+if (i.innerText.toLowerCase() == "{{ item.label | downcase }}" && i.className !== "match") {
+	filled = false;
+}
+
+{%- endfor -%}
+	 });
+
+	
+	if ((!filled && (!found_binName)) || (!filled && item_chosen.length !== 0) || (binPattern.length !== 0 && !found_binName)) {
+		row.style.display = 'none';
+	 } else {
+	    	row.style.display = '';
+	     	noResults = false;
+	 }
+
+	 if (functionPatterns.length == 0 && binPattern.length == 0) {
+	    	row.style.display = '';
+	     	noResults = false;
+	 }
+
+     });
+
+     // update the search message visibility
+     //var searchMessage = document.getElementById('search-message');
+     //searchMessage.style.display = noResults ? 'table-cell' : 'none';
+ }
+
+ function applyFilter() {
+     // filter on load according to the URL
+     var searchBox = document.getElementById('bin-search');
+     var query = decodeURIComponent(location.hash.slice(1));
+     filter(query);
+     if (query) {
+         searchBox.value = query;
+     }
+ }
+
+ function setup() {
+     var searchBox = document.getElementById('bin-search');
+
+     // ensure height during filtering
+     var binTableWrapper = document.getElementById('bin-table-wrapper');
+     binTableWrapper.style.height = binTableWrapper.clientHeight + 'px';
+
+     // handle user input
+     searchBox.addEventListener('input', function () {
+         var query = searchBox.value;
+         history.replaceState(null, null, encodeURI('#' + query));
+         applyFilter();
+     });
+
+     // handle shortcuts
+     addEventListener('keydown', function (event) {
+         // focus search box on valid keydown
+         if (event.key.toLowerCase().match(/^[+a-z]$/) &&
+             !(event.ctrlKey || event.altKey || event.metaKey)) {
+             searchBox.focus();
+             searchBox.parentElement.scrollIntoView();
+         }
+         // clear filter on escape
+         else if (event.key === 'Escape') {
+             location.hash = searchBox.value = '';
+             searchBox.focus();
+             searchBox.parentElement.scrollIntoView();
+         }
+     });
+
+     // handle URL changes
+     window.onhashchange = applyFilter;
+
+     // trigger filter on page load
+     applyFilter();
+ }
+
+ setup();
+</script>

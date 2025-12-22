@@ -1,0 +1,9 @@
+<ul class="filter-list">
+    {%- for item_pair in site.data.items -%}
+    {%- assign item_id = item_pair[0] -%}
+    {%- assign item = item_pair[1] -%}
+    {%- if include.bin.items contains item_id -%}
+    <li><a href="#+{{ item_id }}">{{ item.label }}</a></li>
+    {%- endif -%}
+    {%- endfor -%}
+</ul>

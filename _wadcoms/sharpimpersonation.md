@@ -1,0 +1,15 @@
+---
+description: |
+  TODO
+command: |
+  SharpImpersonation https://github.com/S3cur3Th1sSh1t/SharpImpersonation
+code: |
+  TODO
+
+items:
+  - Red
+
+
+references:
+  - https://github.com/S3cur3Th1sSh1t/SharpImpersonation
+---
