@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""tool-add — add a git repo to the Security Toolkit index.
+
+  bin/tool-add <git-url> [<git-url> ...] [--dry-run] [--no-clone]
+
+For each URL: dedupe by URL, pick a non-colliding name (repo, else repo-owner),
+clone into repos/, auto-tag via AI Agent against tags.json, detect languages
+offline, append to index.jsonl (kept sorted by name), and rebuild web/data.js.
+
+Requires ANTHROPIC_API_KEY in the environment for tagging (falls back to
+README/­language-only tags if the API is unavailable)."""
+import json, os, re, sys, time, subprocess, urllib.request, urllib.error
+from pathlib import Path
+
+BASE      = Path(__file__).resolve().parent.parent
+REPOS     = BASE / "repos"
+INDEX     = BASE / "index.jsonl"
+TAGS_JSON = BASE / "tags.json"
+BUILD     = BASE / "web" / "build.py"
+# load Tools/.env (KEY=VALUE lines) into the environment if present.
+# real exported env vars take precedence (setdefault), so `.env` is a fallback.
+def _load_env(path):
+    try:
+        for line in open(path, encoding="utf-8"):
+            line = line.strip()
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+_load_env(BASE / ".env")
+
+MODEL     = os.environ.get("STK_MODEL", "claude-sonnet-4-6")
+API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# ---- vocabulary + resolver -------------------------------------------------
+tags = json.load(open(TAGS_JSON))
+resolver = {}                                   # alias/canonical -> (canonical, axis)
+for axis, entries in tags.items():
+    for canon, meta in entries.items():
+        resolver[canon] = (canon, axis)
+        for al in meta.get("aliases", []):
+            resolver[al] = (canon, axis)
+
+SEM_AXES  = ["tactic", "target", "function", "reference"]
+AXIS_HINT = {
+    "tactic":    "kill-chain phase (pick 1-3)",
+    "target":    "platform/environment (pick 0-3, only if clearly applicable)",
+    "function":  "kind of tool / capability (pick 1-3)",
+    "reference": "ONLY if it is docs/data, not a runnable tool (pick 0-2)",
+}
+VOCAB = "\n".join(f"{ax} — {AXIS_HINT[ax]}:\n  {', '.join(tags[ax].keys())}" for ax in SEM_AXES)
+
+# file-extension -> language, derived from tags.json (single source of truth)
+EXT2LANG = { ext.lower(): lang
+             for lang, meta in tags.get("language", {}).items()
+             for ext in meta.get("ext", []) }
+
+def detect_langs(repo_dir: Path):
+    counts = {}
+    if not repo_dir.is_dir():
+        return []
+    for root, dirs, files in os.walk(repo_dir):
+        if ".git" in root:
+            continue
+        if len(Path(root).relative_to(repo_dir).parts) > 2:
+            dirs[:] = []; continue
+        for fn in files:
+            lang = EXT2LANG.get(Path(fn).suffix.lower())
+            if lang:
+                counts[lang] = counts.get(lang, 0) + 1
+    langs = [l for l, c in counts.items() if c >= 3]
+    if not langs and counts:
+        langs = [max(counts, key=counts.get)]
+    return langs
+
+def read_readme(repo_dir: Path):
+    for name in ("README.md","README","readme.md","README.txt","README.rst","Readme.md"):
+        p = repo_dir / name
+        if p.is_file() and p.stat().st_size < 60000:
+            try: return p.read_text(errors="ignore")
+            except Exception: pass
+    return ""
+
+def first_line(text):
+    for line in text.splitlines():
+        s = re.sub(r"^[#>*\-\s]+", "", line).strip()          # strip md heading/bullet markers
+        if not s or s.startswith("!["):                       # skip blanks / images-badges
+            continue
+        if s.startswith("<") or "align=" in s or s.startswith("["):
+            continue                                          # skip raw HTML / badge lines
+        s = re.sub(r"<[^>]+>", "", s)                         # strip inline HTML tags
+        s = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", s)      # markdown links/images -> text
+        s = s.strip()
+        if len(s) >= 15 and re.search(r"[A-Za-z]\s+[A-Za-z]", s):   # needs real prose
+            return s[:150]
+    return ""
+
+def call_api(prompt, retries=3):
+    body = json.dumps({"model": MODEL, "max_tokens": 300,
+                       "messages": [{"role": "user", "content": prompt}]}).encode()
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body,
+                headers={"x-api-key": API_KEY, "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"})
+            with urllib.request.urlopen(req, timeout=90) as r:
+                return json.load(r)["content"][0]["text"]
+        except urllib.error.HTTPError as e:
+            # retry transient errors (rate limit / overloaded / 5xx); re-raise the rest
+            if e.code in (429, 500, 502, 503, 529) and attempt < retries - 1:
+                print(f"    … API {e.code}, retrying ({attempt+1}/{retries-1})")
+                time.sleep(2 * (attempt + 1)); continue
+            raise
+        except Exception as e:                       # timeout / connection reset
+            if attempt < retries - 1:
+                print(f"    … API {type(e).__name__}, retrying ({attempt+1}/{retries-1})")
+                time.sleep(2 * (attempt + 1)); continue
+            raise
+
+def parse_json(text):
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    try: return json.loads(m.group(0)) if m else None
+    except Exception: return None
+
+def normalize(raw_tags, langs):
+    out = []
+    for t in (raw_tags or []):
+        s = str(t).strip().lower().strip("#").strip()
+        if ":" in s:                      # tolerate "axis: tag" prefixes from the model
+            s = s.split(":")[-1].strip()
+        hit = resolver.get(s)
+        if hit: out.append(hit[0])
+    out.extend(langs)
+    return sorted(set(out))
+
+PROMPT = """You are tagging a cybersecurity tool for a searchable index.
+
+Tool name: {name}
+Repo URL: {url}
+README excerpt:
+{readme}
+
+Choose tags ONLY from this controlled vocabulary, using the EXACT spellings shown.
+Do not invent tags. Omit an axis if nothing fits.
+
+{vocab}
+
+Also write a concise one-line description (max 150 chars) of what the tool does — concrete, no marketing.
+
+Respond with ONLY this JSON, nothing else:
+{{"tags": ["..."], "desc": "..."}}"""
+
+def tag_tool(name, url, repo_dir):
+    langs = detect_langs(repo_dir)
+    readme = read_readme(repo_dir)
+    if API_KEY:
+        try:
+            parsed = parse_json(call_api(
+                PROMPT.format(name=name, url=url, readme=(readme[:1600] or "(no README)"), vocab=VOCAB)))
+            if parsed and parsed.get("tags"):
+                tags_ = normalize(parsed["tags"], langs)
+                desc  = str(parsed.get("desc", "")).strip()[:200] or first_line(readme)
+                return tags_, desc, MODEL
+        except urllib.error.HTTPError as e:
+            print(f"    ! API error {e.code} — falling back to offline tags")
+        except Exception as e:
+            print(f"    ! API call failed ({e}) — falling back to offline tags")
+    # offline fallback
+    return sorted(set(langs)), first_line(readme), "offline"
+
+# ---- git helpers -----------------------------------------------------------
+def parse_git(url):
+    u = url.strip().rstrip("/")
+    ssh = re.match(r"git@[^:]+:(.+)", u)
+    path = ssh.group(1) if ssh else re.sub(r"^https?://[^/]+/", "", u)
+    path = re.sub(r"\.git$", "", path)
+    parts = [p for p in path.split("/") if p]
+    if len(parts) >= 2: return parts[-2], parts[-1]
+    return "", (parts[-1] if parts else "")
+
+def norm_url(u):
+    return re.sub(r"\.git$", "", (u or "").strip().rstrip("/")).lower()
+
+# ---- index io --------------------------------------------------------------
+def load_index():
+    return [json.loads(l) for l in open(INDEX, encoding="utf-8") if l.strip()]
+
+def save_index(records):
+    records.sort(key=lambda r: r["name"].casefold())
+    with open(INDEX, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+def rebuild_web():
+    if BUILD.exists():
+        subprocess.run([sys.executable, str(BUILD)], check=False)
+
+# ---- main ------------------------------------------------------------------
+def main(argv):
+    dry     = "--dry-run" in argv
+    noclone = "--no-clone" in argv or dry
+    urls    = [a for a in argv if not a.startswith("--")]
+    if not urls:
+        print(__doc__); return 1
+
+    records   = load_index()
+    names     = {r["name"] for r in records}
+    urlset    = {norm_url(r.get("url", "")) for r in records}
+    added     = 0
+
+    for url in urls:
+        owner, repo = parse_git(url)
+        if not repo:
+            print(f"✗ {url}: could not parse repo name"); continue
+        nu = norm_url(url)
+        if nu in urlset:
+            existing = next((r["name"] for r in records if norm_url(r.get("url","")) == nu), "?")
+            print(f"• {url}: already indexed as '{existing}' — skipping"); continue
+
+        # resolve a non-colliding name
+        name = repo
+        if name in names:
+            name = f"{repo}-{owner}"
+            n = 2
+            while name in names:
+                name = f"{repo}-{owner}-{n}"; n += 1
+            print(f"  name '{repo}' taken → using '{name}'")
+
+        dest = REPOS / name
+        print(f"→ {name}  ({url})")
+        if dry:
+            print(f"    [dry-run] would clone into repos/{name} and tag");
+            names.add(name); urlset.add(nu); continue
+
+        if dest.exists():
+            print(f"    ✗ repos/{name} already exists on disk — skipping"); continue
+        if not noclone:
+            r = subprocess.run(["git", "clone", "--depth", "1", url, str(dest)],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                print(f"    ✗ git clone failed: {r.stderr.strip().splitlines()[-1] if r.stderr.strip() else '?'}")
+                continue
+
+        tags_, desc, how = tag_tool(name, url, dest)
+        rec = {"name": name, "url": url, "tags": tags_, "desc": desc}
+        records.append(rec); names.add(name); urlset.add(nu); added += 1
+        print(f"    ✓ tagged ({how}): {tags_}")
+        print(f"      {desc or '(no description)'}")
+
+    if added and not dry:
+        save_index(records)
+        rebuild_web()
+        print(f"\n✓ added {added} tool(s) → index.jsonl re-sorted, web/data.js rebuilt")
+    elif dry:
+        print("\n[dry-run] no changes written")
+    else:
+        print("\nnothing added")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

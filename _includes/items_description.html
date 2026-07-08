@@ -1,7 +1,0 @@
-<dl>
-    {%- for item_pair in site.data.items -%}
-    {%- assign item = item_pair[1] -%}
-    <dt class="filter-name">{{ item.label }}</dt>
-    <dd>{{ item.description | markdownify }}</dd>
-    {%- endfor -%}
-</dl>

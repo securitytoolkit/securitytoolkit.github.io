@@ -1,3 +1,38 @@
-.jekyll-cache
-_site
+# ── Cloned tool repositories ─────────────────────────────────────────────
+# 127 GB of third-party repos (each with its own .git). The index.jsonl
+# manifest is the source of truth; repos are re-clonable via bin/tool-add.
+repos/
 
+# ── Secrets ──────────────────────────────────────────────────────────────
+.env
+*.key
+*.pem
+*_key
+apikey*
+
+# ── Generated web data ───────────────────────────────────────────────────
+# Rebuilt from index.jsonl with: python3 web/build.py
+# NOTE: if you host web/ on GitHub Pages, DELETE this line so the site has data.
+web/data.js
+
+# ── Python ───────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Temp / backups ───────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
+index_v*.jsonl
+index_*_backup.jsonl
+
+# ── OS / editor cruft ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.claude/
+.idea/
+*.swp
+*~
