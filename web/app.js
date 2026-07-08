@@ -221,11 +221,9 @@
   // ---- routing ----
   function isDetail() { return location.hash.startsWith("#/tool/"); }
   function route() {
-    if (isDetail()) {
+    refresh();                                   // always builds the sidebar + count
+    if (isDetail())                              // refresh() skips the list when in detail mode
       renderDetail(decodeURIComponent(location.hash.slice(7)));
-    } else {
-      refresh();
-    }
   }
 
   // ---- events ----
