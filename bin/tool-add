@@ -32,7 +32,7 @@ def _load_env(path):
         pass
 _load_env(BASE / ".env")
 
-MODEL     = os.environ.get("STK_MODEL", "claude-sonnet-4-6")
+MODEL     = os.environ.get("STK_MODEL", "claude-sonnet-5")
 API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # ---- vocabulary + resolver -------------------------------------------------
@@ -98,8 +98,26 @@ def first_line(text):
             return s[:150]
     return ""
 
+# json_schema constrains the reply to exactly this shape, so the model cannot
+# wrap it in prose or emit a second, revised object.
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "desc": {"type": "string"},
+    },
+    "required": ["tags", "desc"],
+    "additionalProperties": False,
+}
+
 def call_api(prompt, retries=3):
-    body = json.dumps({"model": MODEL, "max_tokens": 300,
+    # thinking is off and effort low: tagging is a short classification, and on
+    # models with adaptive thinking the reply would otherwise lead with a
+    # thinking block and burn the token budget before reaching the JSON.
+    body = json.dumps({"model": MODEL, "max_tokens": 1024,
+                       "thinking": {"type": "disabled"},
+                       "output_config": {"effort": "low",
+                                         "format": {"type": "json_schema", "schema": SCHEMA}},
                        "messages": [{"role": "user", "content": prompt}]}).encode()
     for attempt in range(retries):
         try:
@@ -107,7 +125,16 @@ def call_api(prompt, retries=3):
                 headers={"x-api-key": API_KEY, "anthropic-version": "2023-06-01",
                          "content-type": "application/json"})
             with urllib.request.urlopen(req, timeout=90) as r:
-                return json.load(r)["content"][0]["text"]
+                reply = json.load(r)
+                blocks = reply["content"]
+                # never index content[0] — a thinking block can precede the text
+                text = next((b["text"] for b in blocks if b["type"] == "text"), None)
+                if text is None:
+                    types = [b.get("type") for b in blocks]
+                    raise RuntimeError(
+                        f"no text block in reply (stop_reason={reply.get('stop_reason')!r}, "
+                        f"block types={types!r})")
+                return text
         except urllib.error.HTTPError as e:
             # retry transient errors (rate limit / overloaded / 5xx); re-raise the rest
             if e.code in (429, 500, 502, 503, 529) and attempt < retries - 1:
@@ -121,9 +148,19 @@ def call_api(prompt, retries=3):
             raise
 
 def parse_json(text):
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    try: return json.loads(m.group(0)) if m else None
-    except Exception: return None
+    try: return json.loads(text)                 # structured outputs: already bare JSON
+    except Exception: pass
+    # fallback for un-constrained replies: decode at each '{' and keep the last
+    # object that parses — a model that revises itself emits the good one last.
+    dec, best = json.JSONDecoder(), None
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try: obj, _ = dec.raw_decode(text, i)
+        except ValueError: continue
+        if isinstance(obj, dict) and obj.get("tags"):
+            best = obj
+    return best
 
 def normalize(raw_tags, langs):
     out = []
@@ -156,14 +193,19 @@ Respond with ONLY this JSON, nothing else:
 def tag_tool(name, url, repo_dir):
     langs = detect_langs(repo_dir)
     readme = read_readme(repo_dir)
-    if API_KEY:
+    if not API_KEY:
+        print("    ! no ANTHROPIC_API_KEY — falling back to offline tags")
+    else:
         try:
-            parsed = parse_json(call_api(
-                PROMPT.format(name=name, url=url, readme=(readme[:1600] or "(no README)"), vocab=VOCAB)))
+            raw    = call_api(
+                PROMPT.format(name=name, url=url, readme=(readme[:1600] or "(no README)"), vocab=VOCAB))
+            parsed = parse_json(raw)
             if parsed and parsed.get("tags"):
                 tags_ = normalize(parsed["tags"], langs)
                 desc  = str(parsed.get("desc", "")).strip()[:200] or first_line(readme)
                 return tags_, desc, MODEL
+            print(f"    ! could not parse tags from reply — falling back to offline tags"
+                  f"\n      reply began: {raw[:120]!r}")
         except urllib.error.HTTPError as e:
             print(f"    ! API error {e.code} — falling back to offline tags")
         except Exception as e:
